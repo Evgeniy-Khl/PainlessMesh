@@ -38,8 +38,8 @@ void getReadings(); // Prototype for sending sensor readings
 
 Scheduler     userScheduler; // to control your personal task
 painlessMesh  mesh;
-JsonDocument doc;    // Allocate the JSON document
-String sendMsg;
+JsonDocument  doc;    // Allocate the JSON document
+String        sendMsg;
 
 int nodeTime = 0;
 double temper1 = 28.7;
@@ -47,8 +47,6 @@ double temper2 = 25.3;
 double himid = 76.8;
 bool calc_delay = false;
 SimpleList<uint32_t> nodes;
-
-// void sendMessage() ; // Prototype
 
 Task taskSendMessage( TASK_SECOND * 1, TASK_FOREVER, &sendMessage ); // start with a one second interval
 
@@ -62,7 +60,7 @@ void setup() {
   pinMode(LED, OUTPUT);
 
   // Add values in the document
-  doc["node"] = "ISIDA-05";
+  doc["node"] = "ISIDA-04";
   doc["time"] = 0;
 
   // Add an array
@@ -71,12 +69,8 @@ void setup() {
   data.add(65.3);
 
   // Generate the minified JSON and send it to the Serial port
-  serializeJson(doc, Serial);
-  // The above line prints:
-  // {"sensor":"gps","time":1351824120,"data":[48.756080,2.302038]}
-
-  // Start a new line
-  Serial.println();
+  serializeJson(doc, Serial);// The above line prints: {"sensor":"gps","time":1351824120,"data":[48.756080,2.302038]}
+  Serial.println();         // Start a new line
   // Generate the prettified JSON and send it to the Serial port
   serializeJsonPretty(doc, Serial);
   // The above line prints:
@@ -132,9 +126,9 @@ void loop() {
 
 void sendMessage() {
   getReadings ();
-  String msg = doc["node"];
+  String msg;
   serializeJson(doc, sendMsg);
-  msg += sendMsg;
+  msg = sendMsg;
   msg += " myFreeMemory: " + String(ESP.getFreeHeap());
   mesh.sendBroadcast(msg);
 
@@ -147,7 +141,7 @@ void sendMessage() {
     calc_delay = false;
   }
 
-  Serial.printf("Sending message: %s\n", msg.c_str());
+  Serial.printf("Sending message : %s\n", msg.c_str());
   
   taskSendMessage.setInterval( random(TASK_SECOND * 1, TASK_SECOND * 5));  // between 1 and 5 seconds
 }
@@ -162,7 +156,7 @@ void getReadings () {
 }
 
 void receivedCallback(uint32_t from, String & msg) {
-  Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
+  Serial.printf("Received message: %s from %u\n", msg.c_str(), from);
 }
 
 void newConnectionCallback(uint32_t nodeId) {
