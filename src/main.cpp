@@ -11,40 +11,54 @@
 #include "Arduino.h"
 #include <painlessMesh.h>
 #include <ArduinoJson.h>
+#include "main.h"
+#include "BluetoothSerial.h"
 
-// some gpio pin that is connected to an LED...
-// on my rig, this is 5, change to the right number of your LED.
-#ifdef LED_BUILTIN
-#define LED LED_BUILTIN
-#else
-#define LED 2
+#include "esp_bt.h"
+
+#include "multiserial.h"
+#include "commands.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
 #endif
 
-#define   BLINK_PERIOD    3000 // milliseconds until cycle repeat
-#define   BLINK_DURATION  100  // milliseconds LED is on for
-
-#define   MESH_SSID       "whateverYouLike"
-#define   MESH_PASSWORD   "somethingSneaky"
-#define   MESH_PORT       5555
-
-// Prototypes
-void sendMessage(); 
 void receivedCallback(uint32_t from, String & msg);
-void newConnectionCallback(uint32_t nodeId);
-void changedConnectionCallback(); 
-void nodeTimeAdjustedCallback(int32_t offset); 
-void delayReceivedCallback(uint32_t from, int32_t delay);
-void getReadings(); // Prototype for sending sensor readings
-
-Scheduler     userScheduler; // to control your personal task
+Scheduler     userScheduler;  // to control your personal task
 painlessMesh  mesh;
-JsonDocument  doc;    // Allocate the JSON document
+JsonDocument  doc;            // Allocate the JSON document
 String        sendMsg;
 
-int nodeTime = 0;
-double temper1 = 28.7;
-double temper2 = 25.3;
-double himid = 76.8;
+// ------------------  Multiserial  ------------------------------------
+BluetoothSerial SerialBT;
+HardwareSerial UCSerial(1);
+MultiSerial CmdSerial;
+
+char BT_CTRL_ESCAPE_SEQUENCE[] = {'\4', '\4', '\4', '!'};
+uint8_t BT_CTRL_ESCAPE_SEQUENCE_LENGTH = sizeof(BT_CTRL_ESCAPE_SEQUENCE)/sizeof(BT_CTRL_ESCAPE_SEQUENCE[0]);
+
+double dbTemp = 199.9;
+
+unsigned long lastSend = 0;
+unsigned long blinkLed = 0;
+bool isConnected = false;
+bool btKeyHigh = false;
+bool wifiHigh = false;
+bool btReady = false;
+bool escIsEnabled = false;
+String sendBuffer;
+String commandBuffer;
+
+int8_t escapeSequencePos = 0;
+unsigned long lastEscapeSequenceChar = 0;
+
+bool bridgeInit = false;
+bool ucTx = false;
+pvValue upv;
+upv.pvdata = {0};
+int indData = 0;
+//----------------------------------------------------------------------
+
 bool calc_delay = false;
 SimpleList<uint32_t> nodes;
 
@@ -57,31 +71,69 @@ bool onFlag = false;
 void setup() {
   Serial.begin(115200);
 
-  pinMode(LED, OUTPUT);
+  // pinMode(LED, OUTPUT);
+  // ------------------  Multiserial  ------------------------------------
 
-  // Add values in the document
-  doc["node"] = "ISIDA-04";
-  doc["time"] = 0;
+    pinMode(BT_KEY, INPUT_PULLDOWN);
+    pinMode(PIN_WIFI, INPUT_PULLDOWN);
+    pinMode(PIN_CONNECTED, OUTPUT);
+    digitalWrite(PIN_CONNECTED, LOW);
+    pinMode(UC_NRST, INPUT);
 
-  // Add an array
-  JsonArray data = doc["data"].to<JsonArray>();
-  data.add(28.7);
-  data.add(65.3);
+    SerialBT.begin(BT_NAME);
+    UCSerial.begin(9600, SERIAL_8N1, UC_RX, UC_TX);
+    UCSerial.setRxBufferSize(1024);
 
-  // Generate the minified JSON and send it to the Serial port
-  serializeJson(doc, Serial);// The above line prints: {"sensor":"gps","time":1351824120,"data":[48.756080,2.302038]}
-  Serial.println();         // Start a new line
-  // Generate the prettified JSON and send it to the Serial port
-  serializeJsonPretty(doc, Serial);
-  // The above line prints:
-  // {
-  //   "sensor": "gps",
-  //   "time": 1351824120,
-  //   "data": [
-  //     48.756080,
-  //     2.302038
-  //   ]
-  // }
+    CmdSerial.addInterface(&Serial);
+    CmdSerial.addInterface(&SerialBT);
+    CmdSerial.addInterface(&UCSerial);
+
+    sendBuffer.reserve(MAX_SEND_BUFFER);
+    commandBuffer.reserve(MAX_CMD_BUFFER);
+
+    setupCommands();
+
+    while(CmdSerial.available()) {
+        CmdSerial.read();
+    }
+    CmdSerial.disableInterface(&SerialBT);
+    CmdSerial.disableInterface(&UCSerial);
+
+    Serial.print("escapeIsEnabled(): ");
+    Serial.println(escapeIsEnabled());
+
+    Serial.print("monitorBridgeEnabled(): ");
+    Serial.println(monitorBridgeEnabled());
+
+    Serial.print("Serial Bridge Ready: ");
+    Serial.println(BT_NAME);
+
+    commandPrompt();
+
+    digitalWrite(PIN_READY, HIGH);
+    pinMode(PIN_READY, OUTPUT);
+
+    digitalWrite(PIN_MONITOR, LOW);
+    pinMode(PIN_MONITOR, OUTPUT);
+
+    // Add values in the document
+    doc["isida"] = upv.pv.cellID;
+    // Add an array
+    JsonArray data = doc["temper"].to<JsonArray>();
+    for (int i=0; i<4; ++i) data.add(dbTemp);
+    // Add values in the document
+    doc["humid"] = upv.pv.pvRH;
+    doc["minut"] = upv.pv.pvTimer;
+    doc["seconds"] = upv.pv.pvTmrCount;
+    doc["flap"] = upv.pv.pvFlap;
+    doc["power"] = upv.pv.power;
+    doc["fuses"] = upv.pv.fuses;
+    doc["errors"] = upv.pv.errors;
+    doc["warning"] = upv.pv.warning;
+    doc["hours"] = upv.pv.hours;
+    serializeJson(doc, Serial);
+    Serial.println();
+  //-----------------------------------------------------------------------  
 
   mesh.setDebugMsgTypes(ERROR | DEBUG);  // set before init() so that you can see error messages
 
@@ -121,7 +173,7 @@ void setup() {
 
 void loop() {
   mesh.update();
-  digitalWrite(LED, !onFlag);
+  // digitalWrite(LED, !onFlag);
 }
 
 void sendMessage() {
@@ -144,15 +196,6 @@ void sendMessage() {
   Serial.printf("Sending message : %s\n", msg.c_str());
   
   taskSendMessage.setInterval( random(TASK_SECOND * 1, TASK_SECOND * 5));  // between 1 and 5 seconds
-}
-
-void getReadings () {
-  nodeTime++;
-  temper1 += 0.1;
-  temper2 += 0.1;
-  doc["time"] = nodeTime;
-  doc["data"][0] = temper1;
-  doc["data"][1] = temper2;
 }
 
 void receivedCallback(uint32_t from, String & msg) {
