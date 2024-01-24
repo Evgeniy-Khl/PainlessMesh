@@ -174,7 +174,171 @@ void setup() {
 void loop() {
   mesh.update();
   // digitalWrite(LED, !onFlag);
+  // ------------------  Multiserial  ------------------------------------
+  commandLoop();
+
+    bool _connected = SerialBT.hasClient();
+
+    if(isConnected != _connected) {
+        isConnected = _connected;
+
+        if(isConnected) {
+            Serial.println("<Client Connected>");
+        } else {
+            Serial.println("<Client Disconnected>");
+            unescape();
+        }
+        digitalWrite(PIN_CONNECTED, isConnected);
+    }
+    if(isConnected){                    // подключен к BT горит постоянно
+        digitalWrite(PIN_READY, HIGH);
+    } else if(escIsEnabled){            // в режиме Esc последовательности медлено мигает
+        if(millis() - blinkLed > MAX_SEND_WAIT*20){
+            blinkLed = millis();
+            if(btReady){
+                digitalWrite(PIN_READY, HIGH);
+                btReady = false;
+            } else {
+                digitalWrite(PIN_READY, LOW);
+                btReady = true;
+            }
+        }
+    } else if(millis() - blinkLed > MAX_SEND_WAIT*2){// в режиме моста быстро мигает
+        blinkLed = millis();
+        if(btReady){
+            digitalWrite(PIN_READY, HIGH);
+            btReady = false;
+        } else {
+            digitalWrite(PIN_READY, LOW);
+            btReady = true;
+        }
+    }
+
+    bool _btKeyHigh = digitalRead(BT_KEY) == HIGH;
+    bool wifiHigh = digitalRead(PIN_WIFI) == HIGH;
+    if(btKeyHigh != _btKeyHigh) {
+        btKeyHigh = _btKeyHigh;
+
+        if(btKeyHigh) {
+            Serial.println("<BtKey High>");
+        } else {
+            Serial.println("<BtKey Low>");
+        }
+    }
+
+    if(UCSerial.available()) {
+        int read = UCSerial.read();
+
+        if(read != -1) {
+            if(btKeyHigh) {
+                // The uC is trying to send us a command; let's process
+                // it as such.
+                commandByte(read);
+            } else if(!wifiHigh) {
+                if(monitorBridgeEnabled()) {
+                    digitalWrite(PIN_MONITOR, HIGH);
+                    if(!ucTx || bridgeInit == false) {
+                        Serial.println();
+                        Serial.print("UC> ");
+                        ucTx = true;
+                        bridgeInit = true;
+                    }
+                    Serial.print((char)read);
+                } else {
+                    digitalWrite(PIN_MONITOR, LOW);
+                }
+
+                sendBuffer += (char)read;
+                if(
+                    ((char)read == '\n') 
+                    || sendBuffer.length() >= (MAX_SEND_BUFFER - 1)
+                ) {
+                    sendBufferNow();
+                }
+            } else {    // передача масива для MESH
+                upv.pvdata[indData] = read;
+                ++indData;
+                if(indData == 32) {
+                    indData = 0;
+                    doc["isida"] = upv.pv.cellID;
+                    for (int i=0; i<4; ++i) 
+                    {
+                        dbTemp = (double)upv.pv.pvT[i]/10; //Присваиваем в dbTemp число и округляем его до десятых
+                        doc["temper"][i] = dbTemp;
+                    }
+
+                    doc["humid"] = upv.pv.pvRH;
+                    doc["minut"] = upv.pv.pvTimer;
+                    doc["seconds"] = upv.pv.pvTmrCount;
+                    doc["flap"] = upv.pv.pvFlap;
+                    doc["power"] = upv.pv.power;
+                    doc["fuses"] = upv.pv.fuses;
+                    doc["errors"] = upv.pv.errors;
+                    doc["warning"] = upv.pv.warning;
+                    doc["hours"] = upv.pv.hours;
+
+                    serializeJson(doc, Serial);
+                    Serial.println();
+                }
+            }
+        }
+    } else if (millis() - lastSend > MAX_SEND_WAIT) {
+        sendBufferNow();
+    }
+    if(!escapeIsEnabled()) {        // режим моста
+        if(SerialBT.available()) {
+            int read = SerialBT.read();
+
+            if(read != -1) {
+                if(monitorBridgeEnabled()) {
+                    if(ucTx || bridgeInit == false) {
+                        Serial.println();
+                        Serial.print("BT> ");
+                        ucTx = false;
+                        bridgeInit = true;
+                    }
+                    Serial.print((char)read);
+                }
+                UCSerial.write((char)read);
+                if(
+                    read == BT_CTRL_ESCAPE_SEQUENCE[escapeSequencePos]
+                    && (
+                        millis() > (
+                            lastEscapeSequenceChar + BT_CTRL_ESCAPE_SEQUENCE_INTERCHARACTER_DELAY
+                        )
+                    )
+                ) {
+                    lastEscapeSequenceChar = millis();
+                    escapeSequencePos++;
+                } else {
+                    escapeSequencePos = 0;
+                }
+                if(escapeSequencePos == BT_CTRL_ESCAPE_SEQUENCE_LENGTH) {
+                    enableEscape();
+                }
+            }
+        }
+    }
+  //----------------------------------------------------------------------
 }
+
+// ------------------  Multiserial  ------------------------------------
+void sendBufferNow() {
+    int sentBytes = 0;
+    if(isConnected) {
+        if(sendBuffer.length() > 0) {
+            while(sentBytes < sendBuffer.length()) {
+                sentBytes += SerialBT.write(
+                    &(((const uint8_t*)sendBuffer.c_str())[sentBytes]),
+                    sendBuffer.length() - sentBytes
+                );
+            }
+        }
+    }
+    sendBuffer = "";
+    lastSend = millis();
+}
+//-------------------------------------------------------------------------------
 
 void sendMessage() {
   getReadings ();
