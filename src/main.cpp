@@ -25,6 +25,7 @@
 
 void receivedCallback(uint32_t from, String & msg);
 void reseiveUCSerial(void);
+void receiveBlueTooth(void);
 Scheduler     userScheduler;  // to control your personal task
 painlessMesh  mesh;
 JsonDocument  doc;            // Allocate the JSON document
@@ -73,7 +74,6 @@ void setup() {
   upv.pvdata[indData]=0;
   // pinMode(LED, OUTPUT);
   // ------------------  Multiserial  ------------------------------------
-
     pinMode(BT_KEY, INPUT_PULLDOWN);
     pinMode(PIN_WIFI, INPUT_PULLDOWN);
     pinMode(PIN_CONNECTED, OUTPUT);
@@ -187,16 +187,15 @@ void setup() {
 }
 
 void loop() {
-  mesh.update();
+    mesh.update();
   // digitalWrite(LED, !onFlag);
   // ------------------  Multiserial  ------------------------------------
-  commandLoop();
+    commandLoop();
 
     bool _connected = SerialBT.hasClient();
 
     if(isConnected != _connected) {
         isConnected = _connected;
-
         if(isConnected) {
             Serial.println("<Client Connected>");
         } else {
@@ -242,50 +241,21 @@ void loop() {
     }
 
     if(UCSerial.available()) {
-        reseiveUCSerial();
+        receiveUCSerial();
     } else if (millis() - lastSend > MAX_SEND_WAIT) {
         sendBufferNow();
     }
 
     if(!escapeIsEnabled()) {        // режим моста
         if(SerialBT.available()) {
-            int read = SerialBT.read();
-
-            if(read != -1) {
-                if(monitorBridgeEnabled()) {
-                    if(ucTx || bridgeInit == false) {
-                        Serial.println();
-                        Serial.print("BT> ");
-                        ucTx = false;
-                        bridgeInit = true;
-                    }
-                    Serial.print((char)read);
-                }
-                UCSerial.write((char)read);
-                if(
-                    read == BT_CTRL_ESCAPE_SEQUENCE[escapeSequencePos]
-                    && (
-                        millis() > (
-                            lastEscapeSequenceChar + BT_CTRL_ESCAPE_SEQUENCE_INTERCHARACTER_DELAY
-                        )
-                    )
-                ) {
-                    lastEscapeSequenceChar = millis();
-                    escapeSequencePos++;
-                } else {
-                    escapeSequencePos = 0;
-                }
-                if(escapeSequencePos == BT_CTRL_ESCAPE_SEQUENCE_LENGTH) {
-                    enableEscape();
-                }
-            }
+            receiveBlueTooth();
         }
     }
   //----------------------------------------------------------------------
 }
 
 // ------------------  Multiserial  ------------------------------------
-void reseiveUCSerial(){
+void receiveUCSerial(){
     int read = UCSerial.read();
     if(read != -1) {
         if(btKeyHigh) {
@@ -335,6 +305,38 @@ void reseiveUCSerial(){
                 serializeJson(doc, Serial);
                 Serial.println();
             }
+        }
+    }
+}
+void receiveBlueTooth(){
+    int read = SerialBT.read();
+
+    if(read != -1) {
+        if(monitorBridgeEnabled()) {
+            if(ucTx || bridgeInit == false) {
+                Serial.println();
+                Serial.print("BT> ");
+                ucTx = false;
+                bridgeInit = true;
+            }
+            Serial.print((char)read);
+        }
+        UCSerial.write((char)read);
+        if(
+            read == BT_CTRL_ESCAPE_SEQUENCE[escapeSequencePos]
+            && (
+                millis() > (
+                    lastEscapeSequenceChar + BT_CTRL_ESCAPE_SEQUENCE_INTERCHARACTER_DELAY
+                )
+            )
+        ) {
+            lastEscapeSequenceChar = millis();
+            escapeSequencePos++;
+        } else {
+            escapeSequencePos = 0;
+        }
+        if(escapeSequencePos == BT_CTRL_ESCAPE_SEQUENCE_LENGTH) {
+            enableEscape();
         }
     }
 }
