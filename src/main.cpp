@@ -24,6 +24,7 @@
 #endif
 
 void receivedCallback(uint32_t from, String & msg);
+void reseiveUCSerial(void);
 Scheduler     userScheduler;  // to control your personal task
 painlessMesh  mesh;
 JsonDocument  doc;            // Allocate the JSON document
@@ -55,7 +56,6 @@ unsigned long lastEscapeSequenceChar = 0;
 bool bridgeInit = false;
 bool ucTx = false;
 pvValue upv;
-upv.pvdata = {0};
 int indData = 0;
 //----------------------------------------------------------------------
 
@@ -70,7 +70,7 @@ bool onFlag = false;
 
 void setup() {
   Serial.begin(115200);
-
+  upv.pvdata[indData]=0;
   // pinMode(LED, OUTPUT);
   // ------------------  Multiserial  ------------------------------------
 
@@ -80,18 +80,33 @@ void setup() {
     digitalWrite(PIN_CONNECTED, LOW);
     pinMode(UC_NRST, INPUT);
 
-    SerialBT.begin(BT_NAME);
+    
     UCSerial.begin(9600, SERIAL_8N1, UC_RX, UC_TX);
     UCSerial.setRxBufferSize(1024);
 
     CmdSerial.addInterface(&Serial);
-    CmdSerial.addInterface(&SerialBT);
     CmdSerial.addInterface(&UCSerial);
 
     sendBuffer.reserve(MAX_SEND_BUFFER);
     commandBuffer.reserve(MAX_CMD_BUFFER);
 
     setupCommands();
+
+    Serial.println("Waiting for STM32 transmission.");
+    //----- Wait BT_Name ----- 
+    wifiHigh = true;
+    while(indData<32)
+    {
+        if(UCSerial.available()) {
+            reseiveUCSerial();
+        }
+    }
+    sendMsg = "ISIDA-" + String(upv.pv.cellID);
+    Serial.print("New name bluetooth:");
+    Serial.println(sendMsg);
+
+    SerialBT.begin(sendMsg);
+    CmdSerial.addInterface(&SerialBT);
 
     while(CmdSerial.available()) {
         CmdSerial.read();
@@ -215,7 +230,7 @@ void loop() {
     }
 
     bool _btKeyHigh = digitalRead(BT_KEY) == HIGH;
-    bool wifiHigh = digitalRead(PIN_WIFI) == HIGH;
+    bool   wifiHigh = digitalRead(PIN_WIFI) == HIGH;
     if(btKeyHigh != _btKeyHigh) {
         btKeyHigh = _btKeyHigh;
 
@@ -227,64 +242,11 @@ void loop() {
     }
 
     if(UCSerial.available()) {
-        int read = UCSerial.read();
-
-        if(read != -1) {
-            if(btKeyHigh) {
-                // The uC is trying to send us a command; let's process
-                // it as such.
-                commandByte(read);
-            } else if(!wifiHigh) {
-                if(monitorBridgeEnabled()) {
-                    digitalWrite(PIN_MONITOR, HIGH);
-                    if(!ucTx || bridgeInit == false) {
-                        Serial.println();
-                        Serial.print("UC> ");
-                        ucTx = true;
-                        bridgeInit = true;
-                    }
-                    Serial.print((char)read);
-                } else {
-                    digitalWrite(PIN_MONITOR, LOW);
-                }
-
-                sendBuffer += (char)read;
-                if(
-                    ((char)read == '\n') 
-                    || sendBuffer.length() >= (MAX_SEND_BUFFER - 1)
-                ) {
-                    sendBufferNow();
-                }
-            } else {    // передача масива для MESH
-                upv.pvdata[indData] = read;
-                ++indData;
-                if(indData == 32) {
-                    indData = 0;
-                    doc["isida"] = upv.pv.cellID;
-                    for (int i=0; i<4; ++i) 
-                    {
-                        dbTemp = (double)upv.pv.pvT[i]/10; //Присваиваем в dbTemp число и округляем его до десятых
-                        doc["temper"][i] = dbTemp;
-                    }
-
-                    doc["humid"] = upv.pv.pvRH;
-                    doc["minut"] = upv.pv.pvTimer;
-                    doc["seconds"] = upv.pv.pvTmrCount;
-                    doc["flap"] = upv.pv.pvFlap;
-                    doc["power"] = upv.pv.power;
-                    doc["fuses"] = upv.pv.fuses;
-                    doc["errors"] = upv.pv.errors;
-                    doc["warning"] = upv.pv.warning;
-                    doc["hours"] = upv.pv.hours;
-
-                    serializeJson(doc, Serial);
-                    Serial.println();
-                }
-            }
-        }
+        reseiveUCSerial();
     } else if (millis() - lastSend > MAX_SEND_WAIT) {
         sendBufferNow();
     }
+
     if(!escapeIsEnabled()) {        // режим моста
         if(SerialBT.available()) {
             int read = SerialBT.read();
@@ -323,6 +285,59 @@ void loop() {
 }
 
 // ------------------  Multiserial  ------------------------------------
+void reseiveUCSerial(){
+    int read = UCSerial.read();
+    if(read != -1) {
+        if(btKeyHigh) {
+            // The uC is trying to send us a command; let's process
+            // it as such.
+            commandByte(read);
+        } else if(!wifiHigh) {
+            if(monitorBridgeEnabled()) {
+                digitalWrite(PIN_MONITOR, HIGH);
+                if(!ucTx || bridgeInit == false) {
+                    Serial.println();
+                    Serial.print("UC> ");
+                    ucTx = true;
+                    bridgeInit = true;
+                }
+                Serial.print((char)read);
+            } else {
+                digitalWrite(PIN_MONITOR, LOW);
+            }
+
+            sendBuffer += (char)read;
+            if(
+                ((char)read == '\n') 
+                || sendBuffer.length() >= (MAX_SEND_BUFFER - 1)
+            ) {
+                sendBufferNow();
+            }
+        } else {    // передача масива для MESH
+            upv.pvdata[indData] = read;
+            ++indData;
+            if(indData == 32) {
+                indData = 0;
+                doc["isida"] = upv.pv.cellID;
+                for (int i=0; i<4; ++i){
+                    dbTemp = (double)upv.pv.pvT[i]/10; //Присваиваем в dbTemp число и округляем его до десятых
+                    doc["temper"][i] = dbTemp;
+                }
+                doc["humid"] = upv.pv.pvRH;
+                doc["minut"] = upv.pv.pvTimer;
+                doc["seconds"] = upv.pv.pvTmrCount;
+                doc["flap"] = upv.pv.pvFlap;
+                doc["power"] = upv.pv.power;
+                doc["fuses"] = upv.pv.fuses;
+                doc["errors"] = upv.pv.errors;
+                doc["warning"] = upv.pv.warning;
+                doc["hours"] = upv.pv.hours;
+                serializeJson(doc, Serial);
+                Serial.println();
+            }
+        }
+    }
+}
 void sendBufferNow() {
     int sentBytes = 0;
     if(isConnected) {
