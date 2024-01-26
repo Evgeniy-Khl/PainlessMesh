@@ -12,9 +12,9 @@
 #include <painlessMesh.h>
 #include <ArduinoJson.h>
 #include "main.h"
-#include "BluetoothSerial.h"
+// #include "BluetoothSerial.h"
 
-#include "esp_bt.h"
+// #include "esp_bt.h"
 
 #include "multiserial.h"
 #include "commands.h"
@@ -33,9 +33,10 @@ JsonDocument  doc;            // Allocate the JSON document
 String        sendMsg = BT_NAME;
 
 // ------------------  Multiserial  ------------------------------------
-BluetoothSerial SerialBT;
+// BluetoothSerial SerialBT;
 HardwareSerial UCSerial(1);
 MultiSerial CmdSerial;
+HardwareSerial SerialBT(2);
 
 char BT_CTRL_ESCAPE_SEQUENCE[] = {'\4', '\4', '\4', '!'};
 uint8_t BT_CTRL_ESCAPE_SEQUENCE_LENGTH = sizeof(BT_CTRL_ESCAPE_SEQUENCE)/sizeof(BT_CTRL_ESCAPE_SEQUENCE[0]);
@@ -96,18 +97,25 @@ void setup() {
 
     digitalWrite(PIN_MESH_START, HIGH);  // Mesh Start!!
     Serial.println("Waiting for STM32 transmission.");
-    //----- Wait BT_Name ----- 
-    while(indData<32)
+    //----- Wait BT_Name -----
+    indData = 0; 
+    while(indData<31)
     {
         if(UCSerial.available()) {
             receiveUCSerial();
+            // Serial.print("indData=");
+            // Serial.println(indData);
         }
     }
+    indData = 0;
     sendMsg = "ISIDA-" + String(upv.pv.cellID);
     Serial.print("New name bluetooth:");
     Serial.println(sendMsg);
 
-    SerialBT.begin(sendMsg);
+    // SerialBT.begin(sendMsg);
+    SerialBT.begin(9600, SERIAL_8N1, UC_RX, UC_TX);
+    SerialBT.setRxBufferSize(1024);
+
     CmdSerial.addInterface(&SerialBT);
 
     while(CmdSerial.available()) {
@@ -148,6 +156,7 @@ void setup() {
     doc["errors"] = upv.pv.errors;
     doc["warning"] = upv.pv.warning;
     doc["hours"] = upv.pv.hours;
+    Serial.println("----------setup()---------------");
     serializeJson(doc, Serial);
     Serial.println();
   //-----------------------------------------------------------------------  
@@ -194,7 +203,7 @@ void loop() {
   // ------------------  Multiserial  ------------------------------------
     commandLoop();
 
-    bool _connected = SerialBT.hasClient();
+    bool _connected = false;//SerialBT.hasClient();
 
     if(isConnected != _connected) {
         isConnected = _connected;
@@ -287,6 +296,10 @@ void receiveUCSerial(){
             }
         } else {    // передача масива для MESH
             upv.pvdata[indData] = read;
+            // Serial.print("indData=");
+            // Serial.println(indData);
+            // Serial.print(read);
+            // Serial.println();
             ++indData;
             if(indData == 32) {
                 indData = 0;
@@ -304,6 +317,7 @@ void receiveUCSerial(){
                 doc["errors"] = upv.pv.errors;
                 doc["warning"] = upv.pv.warning;
                 doc["hours"] = upv.pv.hours;
+                Serial.println("----------loop()---------------");
                 serializeJson(doc, Serial);
                 Serial.println();
             }
@@ -312,7 +326,7 @@ void receiveUCSerial(){
 }
 void receiveBlueTooth(){
     int read = SerialBT.read();
-
+    if(isConnected){
     if(read != -1) {
         if(monitorBridgeEnabled()) {
             if(ucTx || bridgeInit == false) {
@@ -321,9 +335,10 @@ void receiveBlueTooth(){
                 ucTx = false;
                 bridgeInit = true;
             }
-            Serial.print((char)read);
+            Serial.print(read);
+            Serial.print(";");
         }
-        UCSerial.write((char)read);
+        // UCSerial.write((char)read);
         if(
             read == BT_CTRL_ESCAPE_SEQUENCE[escapeSequencePos]
             && (
@@ -340,6 +355,7 @@ void receiveBlueTooth(){
         if(escapeSequencePos == BT_CTRL_ESCAPE_SEQUENCE_LENGTH) {
             enableEscape();
         }
+    }
     }
 }
 void sendBufferNow() {

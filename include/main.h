@@ -59,7 +59,7 @@ void nodeTimeAdjustedCallback(int32_t offset);
 void delayReceivedCallback(uint32_t from, int32_t delay);
 
 union pvValue{
-  uint8_t pvdata[30];
+  uint8_t pvdata[32];
   struct rampv {
    uint16_t cellID;               // 2 байт ind=0         сетевой номер и тип прибора
     int16_t pvT[4];               // 8 байт ind=2-ind=9   значения [MAX_DEVICES] датчиков температуры
@@ -74,11 +74,13 @@ union pvValue{
     uint8_t cost0, cost1;         // 2 байт ind=25;ind=26 затраты ресурсов
     uint8_t date, hours;          // 2 байт ind=27;ind=28 счетчики суток и часов
     uint8_t other0;               // 1 байт ind=29        не используется !!!!!!!!!!!!!!!!!!!!!!!!!
+    uint8_t other1;               // 1 байт ind=29        не используется !!!!!!!!!!!!!!!!!!!!!!!!!
+    uint8_t other2;               // 1 байт ind=29        не используется !!!!!!!!!!!!!!!!!!!!!!!!!
   } pv;// ------------------ ИТОГО 30 bytes -------------------------------
 } ;
 
 extern MultiSerial CmdSerial;
 extern HardwareSerial UCSerial;
-extern BluetoothSerial SerialBT;
+extern HardwareSerial SerialBT;
 
 #endif /* _ESP32_CORE_MAIN_H_ */
