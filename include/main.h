@@ -81,6 +81,6 @@ union pvValue{
 
 extern MultiSerial CmdSerial;
 extern HardwareSerial UCSerial;
-extern HardwareSerial SerialBT;
+extern BluetoothSerial SerialBT;
 
 #endif /* _ESP32_CORE_MAIN_H_ */

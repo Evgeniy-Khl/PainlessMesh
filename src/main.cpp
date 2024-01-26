@@ -12,9 +12,9 @@
 #include <painlessMesh.h>
 #include <ArduinoJson.h>
 #include "main.h"
-// #include "BluetoothSerial.h"
+#include "BluetoothSerial.h"
 
-// #include "esp_bt.h"
+#include "esp_bt.h"
 
 #include "multiserial.h"
 #include "commands.h"
@@ -33,10 +33,10 @@ JsonDocument  doc;            // Allocate the JSON document
 String        sendMsg = BT_NAME;
 
 // ------------------  Multiserial  ------------------------------------
-// BluetoothSerial SerialBT;
+BluetoothSerial SerialBT;
 HardwareSerial UCSerial(1);
 MultiSerial CmdSerial;
-HardwareSerial SerialBT(2);
+// HardwareSerial SerialBT(2);
 
 char BT_CTRL_ESCAPE_SEQUENCE[] = {'\4', '\4', '\4', '!'};
 uint8_t BT_CTRL_ESCAPE_SEQUENCE_LENGTH = sizeof(BT_CTRL_ESCAPE_SEQUENCE)/sizeof(BT_CTRL_ESCAPE_SEQUENCE[0]);
@@ -112,9 +112,9 @@ void setup() {
     Serial.print("New name bluetooth:");
     Serial.println(sendMsg);
 
-    // SerialBT.begin(sendMsg);
-    SerialBT.begin(9600, SERIAL_8N1, UC_RX, UC_TX);
-    SerialBT.setRxBufferSize(1024);
+    SerialBT.begin(sendMsg);
+    // SerialBT.begin(9600, SERIAL_8N1, UC_RX, UC_TX);
+    // SerialBT.setRxBufferSize(1024);
 
     CmdSerial.addInterface(&SerialBT);
 
@@ -156,9 +156,9 @@ void setup() {
     doc["errors"] = upv.pv.errors;
     doc["warning"] = upv.pv.warning;
     doc["hours"] = upv.pv.hours;
-    Serial.println("----------setup()---------------");
-    serializeJson(doc, Serial);
-    Serial.println();
+    // Serial.println("----------setup()---------------");
+    // serializeJson(doc, Serial);
+    // Serial.println();
   //-----------------------------------------------------------------------  
 
   mesh.setDebugMsgTypes(ERROR | DEBUG);  // set before init() so that you can see error messages
@@ -203,7 +203,7 @@ void loop() {
   // ------------------  Multiserial  ------------------------------------
     commandLoop();
 
-    bool _connected = false;//SerialBT.hasClient();
+    bool _connected = SerialBT.hasClient();
 
     if(isConnected != _connected) {
         isConnected = _connected;
@@ -262,7 +262,7 @@ void loop() {
             receiveBlueTooth();
         }
     }
-  //----------------------------------------------------------------------
+  //**********************************************************************
 }
 
 // ------------------  Multiserial  ------------------------------------
@@ -335,10 +335,10 @@ void receiveBlueTooth(){
                 ucTx = false;
                 bridgeInit = true;
             }
-            Serial.print(read);
-            Serial.print(";");
+            Serial.print((char)read);
+            // Serial.print(";");
         }
-        // UCSerial.write((char)read);
+        UCSerial.write((char)read);
         if(
             read == BT_CTRL_ESCAPE_SEQUENCE[escapeSequencePos]
             && (
@@ -373,7 +373,7 @@ void sendBufferNow() {
     sendBuffer = "";
     lastSend = millis();
 }
-//-------------------------------------------------------------------------------
+//-------------------------------------------------------------------------
 
 void sendMessage() {
   String msg;
