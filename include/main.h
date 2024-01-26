@@ -2,6 +2,8 @@
 #define main_h
 
 #include "Arduino.h"
+#include "BluetoothSerial.h"
+#include "multiserial.h"
 
 // some gpio pin that is connected to an LED...
 // on my rig, this is 5, change to the right number of your LED.
@@ -29,7 +31,7 @@
 // This pin will be pulled HIGH (if defined) when the device is ready for connections
 #define PIN_READY 2
 #define PIN_MONITOR 5
-#define PIN_WIFI 18
+#define PIN_MESH_START 18
 // This pin will be pulled HIGH when a client is connected over bluetooth.
 #define PIN_CONNECTED 4
 // If your microcontroller pulls this pin HIGH, it can send commands directly to the ESP32 unit
@@ -55,7 +57,6 @@ void newConnectionCallback(uint32_t nodeId);
 void changedConnectionCallback(); 
 void nodeTimeAdjustedCallback(int32_t offset); 
 void delayReceivedCallback(uint32_t from, int32_t delay);
-void getReadings(); // Prototype for sending sensor readings
 
 union pvValue{
   uint8_t pvdata[30];
@@ -75,5 +76,9 @@ union pvValue{
     uint8_t other0;               // 1 байт ind=29        не используется !!!!!!!!!!!!!!!!!!!!!!!!!
   } pv;// ------------------ ИТОГО 30 bytes -------------------------------
 } ;
+
+extern MultiSerial CmdSerial;
+extern HardwareSerial UCSerial;
+extern BluetoothSerial SerialBT;
 
 #endif /* _ESP32_CORE_MAIN_H_ */

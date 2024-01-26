@@ -24,12 +24,13 @@
 #endif
 
 void receivedCallback(uint32_t from, String & msg);
-void reseiveUCSerial(void);
+void receiveUCSerial(void);
+void sendBufferNow(void);
 void receiveBlueTooth(void);
 Scheduler     userScheduler;  // to control your personal task
 painlessMesh  mesh;
 JsonDocument  doc;            // Allocate the JSON document
-String        sendMsg;
+String        sendMsg = BT_NAME;
 
 // ------------------  Multiserial  ------------------------------------
 BluetoothSerial SerialBT;
@@ -45,7 +46,7 @@ unsigned long lastSend = 0;
 unsigned long blinkLed = 0;
 bool isConnected = false;
 bool btKeyHigh = false;
-bool wifiHigh = false;
+// bool wifiHigh = false;
 bool btReady = false;
 bool escIsEnabled = false;
 String sendBuffer;
@@ -75,7 +76,8 @@ void setup() {
   // pinMode(LED, OUTPUT);
   // ------------------  Multiserial  ------------------------------------
     pinMode(BT_KEY, INPUT_PULLDOWN);
-    pinMode(PIN_WIFI, INPUT_PULLDOWN);
+    pinMode(PIN_MESH_START, OUTPUT);
+    digitalWrite(PIN_MESH_START, LOW);  // Mesh no start
     pinMode(PIN_CONNECTED, OUTPUT);
     digitalWrite(PIN_CONNECTED, LOW);
     pinMode(UC_NRST, INPUT);
@@ -92,13 +94,13 @@ void setup() {
 
     setupCommands();
 
+    digitalWrite(PIN_MESH_START, HIGH);  // Mesh Start!!
     Serial.println("Waiting for STM32 transmission.");
     //----- Wait BT_Name ----- 
-    wifiHigh = true;
     while(indData<32)
     {
         if(UCSerial.available()) {
-            reseiveUCSerial();
+            receiveUCSerial();
         }
     }
     sendMsg = "ISIDA-" + String(upv.pv.cellID);
@@ -121,7 +123,7 @@ void setup() {
     Serial.println(monitorBridgeEnabled());
 
     Serial.print("Serial Bridge Ready: ");
-    Serial.println(BT_NAME);
+    Serial.println(sendMsg);
 
     commandPrompt();
 
@@ -229,7 +231,7 @@ void loop() {
     }
 
     bool _btKeyHigh = digitalRead(BT_KEY) == HIGH;
-    bool   wifiHigh = digitalRead(PIN_WIFI) == HIGH;
+    // bool   wifiHigh = digitalRead(PIN_WIFI) == HIGH;
     if(btKeyHigh != _btKeyHigh) {
         btKeyHigh = _btKeyHigh;
 
@@ -262,7 +264,7 @@ void receiveUCSerial(){
             // The uC is trying to send us a command; let's process
             // it as such.
             commandByte(read);
-        } else if(!wifiHigh) {
+        } else if(isConnected) {
             if(monitorBridgeEnabled()) {
                 digitalWrite(PIN_MONITOR, HIGH);
                 if(!ucTx || bridgeInit == false) {
@@ -358,7 +360,6 @@ void sendBufferNow() {
 //-------------------------------------------------------------------------------
 
 void sendMessage() {
-  getReadings ();
   String msg;
   serializeJson(doc, sendMsg);
   msg = sendMsg;
